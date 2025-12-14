@@ -19,7 +19,7 @@
 #include <Adafruit_HMC5883_U.h>
 
 // ============================================================================
-// TARGET DESTINATION - CHANGE THESE COORDINATES TO YOUR MONSTER ENERGY STORE!
+// TARGET DESTINATION - CHANGE THESE COORDINATES TO YOUR ENERGY DRINK STORE!
 // ============================================================================
 const double TARGET_LAT = 40.748440;   // Latitude of destination
 const double TARGET_LON = -73.985664;  // Longitude of destination

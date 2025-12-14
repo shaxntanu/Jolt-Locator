@@ -1,8 +1,8 @@
 # ⚡ The Jolt Locator 🧭
 
-> *When you NEED that Monster Energy and you need it NOW.*
+> *When you NEED that energy drink and you need it NOW.*
 
-A true-north, GPS-enabled compass built on the ESP32 that points directly to the nearest Monster Energy drink store. Because sometimes Google Maps just isn't aggressive enough.
+A true-north, GPS-enabled compass built on the ESP32 that points directly to the nearest energy drink store. Because sometimes Google Maps just isn't aggressive enough.
 
 ## 🎯 What Does It Do?
 
@@ -63,14 +63,14 @@ Open `JoltLocator.ino` and find these lines near the top:
 
 ```cpp
 // ============================================================================
-// TARGET DESTINATION - CHANGE THESE COORDINATES TO YOUR MONSTER ENERGY STORE!
+// TARGET DESTINATION - CHANGE THESE COORDINATES TO YOUR ENERGY DRINK STORE!
 // ============================================================================
 const double TARGET_LAT = 40.748440;   // Latitude of destination
 const double TARGET_LON = -73.985664;  // Longitude of destination
 // ============================================================================
 ```
 
-Replace with your local Monster Energy dealer's coordinates. Google Maps is your friend.
+Replace with your local energy drink store's coordinates. Google Maps is your friend.
 
 ### Magnetic Declination
 
