@@ -383,22 +383,6 @@ This project taught me the complete hardware design workflow:
 
 ---
 
-## 📸 Gallery
-
-### Design Files
-
-| Schematic | PCB 3D Render |
-|-----------|---------------|
-| ![Schematic](KiCad_Assets/CircuitJoltLocatorSchematics.pdf) | ![3D View](KiCad_Assets/Circuit3D.png) |
-
-### Prototype (Coming Soon)
-
-| Breadboard Setup | Finding Jolt Stores |
-|------------------|---------------------|
-| *Photo pending* | *Photo pending* |
-
----
-
 ## 📄 License
 
 This project is licensed under the **MIT License** - see the [LICENSE](LICENSE) file for details.
