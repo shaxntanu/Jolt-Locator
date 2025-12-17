@@ -1,4 +1,4 @@
-# Jolt Locator – ESP32 Energy Drink Store Locator ⚡
+# Jolt Locator – ESP32 Energy Drink Store Locator (By Shantanu) ⚡
 
 > **My first PCB design using KiCad** - A fun GPS-based device to help you find your nearest Jolt energy drink store!
 
