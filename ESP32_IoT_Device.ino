@@ -1,14 +1,17 @@
 /*
- * ESP32 IoT Navigation Device
- * GPS Tracker with Digital Compass and OLED Display
+ * Jolt Locator – ESP32 Energy Drink Store Locator
+ * Find your nearest Jolt energy drink store with GPS and compass guidance!
  * 
  * Hardware:
  *   - ESP32 DevKit V1 (3.3V logic)
- *   - NEO-6M GPS Module (UART2)
- *   - HMC5883L/QMC5883L Magnetometer (I2C)
- *   - SSD1306 0.96" OLED 128x64 (I2C)
- *   - RGB LED (Common Cathode)
- *   - 2x Push Buttons (Active-low)
+ *   - NEO-6M GPS Module (UART2) - tracks your current location
+ *   - HMC5883L/QMC5883L Magnetometer (I2C) - guides you in the right direction
+ *   - SSD1306 0.96" OLED 128x64 (I2C) - displays location and heading info
+ *   - RGB LED (Common Cathode) - status indicator
+ *   - 2x Push Buttons (Active-low) - user controls
+ * 
+ * Future: Integrate store location database/API to show distance and
+ *         direction to nearest Jolt energy drink retailer.
  * 
  * Author: Arceus Labs
  * License: MIT
@@ -158,8 +161,9 @@ void setup() {
   
   Serial.println();
   Serial.println("========================================");
-  Serial.println("  ESP32 IoT Navigation Device");
-  Serial.println("  Jolt Locator - Arceus Labs");
+  Serial.println("  JOLT LOCATOR");
+  Serial.println("  Energy Drink Store Locator");
+  Serial.println("  by Arceus Labs");
   Serial.println("========================================");
   Serial.println();
   
@@ -178,7 +182,8 @@ void setup() {
   
   Serial.println();
   Serial.println("[SYSTEM] Initialization complete!");
-  Serial.println("[SYSTEM] Waiting for GPS fix...");
+  Serial.println("[SYSTEM] Waiting for GPS fix to locate you...");
+  Serial.println("[SYSTEM] Soon you'll find your nearest Jolt store!");
   Serial.println();
 }
 
@@ -267,9 +272,11 @@ void initDisplay() {
     display.setTextColor(SSD1306_WHITE);
     display.setCursor(20, 10);
     display.println("JOLT LOCATOR");
-    display.setCursor(30, 25);
+    display.setCursor(10, 25);
+    display.println("Energy Drink Finder");
+    display.setCursor(30, 40);
     display.println("Arceus Labs");
-    display.setCursor(15, 45);
+    display.setCursor(15, 54);
     display.println("Initializing...");
     display.display();
     delay(1500);
@@ -423,8 +430,20 @@ void updateDisplay() {
 void displayGPSInfo() {
   display.setTextSize(1);
   
-  // Line 1: Coordinates
+  // Header
   display.setCursor(0, 0);
+  display.print("JOLT LOCATOR");
+  
+  // Status indicator
+  display.setCursor(100, 0);
+  if (satellites >= 4) {
+    display.print("FIX");
+  } else {
+    display.print("...");
+  }
+  
+  // Line 2-3: Coordinates (your current location)
+  display.setCursor(0, 12);
   if (gpsValid) {
     display.print("Lat:");
     display.println(String(latitude, 5));
@@ -435,16 +454,7 @@ void displayGPSInfo() {
     display.println("Lon: ---.-----");
   }
   
-  // Line 3: Satellites + Time
-  display.setCursor(0, 24);
-  display.print("Sats: ");
-  display.print(satellites);
-  if (timeValid) {
-    display.print("  ");
-    display.print(formatTime(gpsHour, gpsMinute, gpsSecond));
-  }
-  
-  // Line 4: Compass heading
+  // Line 4: Compass heading (direction you're facing)
   display.setCursor(0, 36);
   display.print("Hdg: ");
   if (compassInitialized) {
@@ -456,7 +466,7 @@ void displayGPSInfo() {
     display.print("N/A");
   }
   
-  // Line 5: Speed or Altitude
+  // Line 5: Speed (when walking to store) or Altitude
   display.setCursor(0, 48);
   if (speed_kmh > SPEED_THRESHOLD) {
     display.print("Spd: ");
@@ -468,20 +478,18 @@ void displayGPSInfo() {
     display.print(" m");
   }
   
-  // Status indicator
-  display.setCursor(100, 0);
-  if (satellites >= 4) {
-    display.print("FIX");
-  } else {
-    display.print("...");
-  }
+  // Line 6: Placeholder for future store info
+  display.setCursor(0, 56);
+  display.print("Sats:");
+  display.print(satellites);
+  display.print(" Store:TBD");
 }
 
 void displayCompassOnly() {
-  // Large compass display
+  // Large compass display - helps user walk toward store
   display.setTextSize(1);
-  display.setCursor(35, 0);
-  display.println("COMPASS");
+  display.setCursor(25, 0);
+  display.println("FIND JOLT");
   
   // Draw compass circle
   int centerX = 64;
@@ -526,7 +534,7 @@ void displaySystemInfo() {
   display.setTextSize(1);
   
   display.setCursor(0, 0);
-  display.println("=== SYSTEM INFO ===");
+  display.println("== JOLT LOCATOR ==");
   
   display.setCursor(0, 12);
   display.print("Uptime: ");
@@ -534,14 +542,14 @@ void displaySystemInfo() {
   
   display.setCursor(0, 24);
   display.print("GPS: ");
-  display.println(gpsValid ? "Connected" : "Searching");
+  display.println(gpsValid ? "Locked" : "Searching");
   
   display.setCursor(0, 36);
   display.print("Compass: ");
-  display.println(compassInitialized ? "OK" : "Error");
+  display.println(compassInitialized ? "Ready" : "Error");
   
   display.setCursor(0, 48);
-  display.print("Distance: ");
+  display.print("Traveled: ");
   if (totalDistance < 1000) {
     display.print(totalDistance, 0);
     display.println(" m");
@@ -551,10 +559,7 @@ void displaySystemInfo() {
   }
   
   display.setCursor(0, 56);
-  display.print("Mode: ");
-  display.print(currentMode + 1);
-  display.print("/");
-  display.print(MODE_COUNT);
+  display.print("Stores: TBD");  // Future: show nearby store count
 }
 
 void displayCalibration() {

@@ -1,6 +1,6 @@
-# ESP32 IoT Navigation Device - Jolt Locator
+# Jolt Locator – ESP32 Energy Drink Store Locator ⚡
 
-> **My first PCB design using KiCad** — A GPS tracker with digital compass and OLED display, built as a learning journey into hardware design.
+> **My first PCB design using KiCad** — A fun GPS-based device to help you find your nearest Jolt energy drink store!
 
 ![KiCad](https://img.shields.io/badge/KiCad-9.0.6-blue?logo=kicad)
 ![Arduino](https://img.shields.io/badge/Arduino-ESP32-00979D?logo=arduino)
@@ -11,47 +11,53 @@
 
 ## 🎯 About This Project
 
-This project marks my **first venture into PCB design** using KiCad. After countless hours of breadboard prototyping and jumper wire chaos, I decided it was time to learn proper hardware design — from schematic capture to PCB layout.
+**Need a Jolt? Let this device guide you there!**
+
+The Jolt Locator is a handheld GPS device designed to help energy drink enthusiasts find nearby stores that sell Jolt energy drinks. Using GPS to track your current location and a digital compass to point you in the right direction, you'll never be far from your next caffeine fix.
+
+This project also marks my **first venture into PCB design** using KiCad. I wanted to combine learning hardware design with something fun and practical — and what's more practical than finding energy drinks when you need them?
 
 **Why this project?**
-- Wanted a practical, real-world application to learn PCB design
-- GPS navigation devices combine multiple communication protocols (I2C, UART, GPIO)
+- Wanted a fun, themed project to learn PCB design
+- GPS + compass navigation combines multiple communication protocols (I2C, UART, GPIO)
 - Perfect complexity level for a first PCB — challenging but achievable
-- Creates something actually useful for outdoor activities
+- Creates something unique and conversation-worthy
 
 **The Journey:**
-Starting with zero KiCad experience, I learned schematic symbols, footprint assignment, PCB routing, design rules, and the entire workflow from concept to manufacturable design. This README documents not just the project, but the learning process itself.
+Starting with zero KiCad experience, I learned schematic symbols, footprint assignment, PCB routing, design rules, and the entire workflow from concept to manufacturable design. The energy drink theme kept me motivated throughout the learning process!
 
 ---
 
 ## 📋 Overview
 
-The **Jolt Locator** is a handheld GPS navigation device built around the ESP32 microcontroller. It provides:
+The **Jolt Locator** is a handheld energy drink store finder built around the ESP32 microcontroller. It provides:
 
-- **Real-time GPS tracking** with coordinates, altitude, and speed
-- **Digital compass** for heading and direction
-- **OLED display** showing navigation data
-- **Visual status indicators** via RGB LED
-- **User interaction** through push buttons
+- **Real-time GPS tracking** — Know exactly where you are
+- **Digital compass** — Get oriented and walk in the right direction toward stores
+- **OLED display** — Shows your coordinates, heading, and (future) store info
+- **Visual status indicators** — RGB LED shows GPS lock and movement status
+- **User interaction** — Push buttons to switch display modes
+
+**Current Status:** The hardware accurately displays your position and heading. Future software updates will integrate a store location database/API to show distance and direction to the nearest Jolt retailer.
 
 ### Key Features
 
 | Feature | Description |
 |---------|-------------|
-| GPS Tracking | NEO-6M module for accurate positioning |
-| Digital Compass | QMC5883L magnetometer with 8-point direction |
-| OLED Display | 128x64 pixel display with multiple view modes |
-| Status LED | RGB indicator for GPS fix and movement status |
-| Distance Tracking | Cumulative distance traveled calculation |
-| Non-blocking Code | Smooth operation without delays |
+| GPS Tracking | NEO-6M module tracks your current location |
+| Digital Compass | QMC5883L helps you walk in the right direction |
+| OLED Display | Shows coordinates, heading, and store info (TBD) |
+| Status LED | RGB indicator for GPS fix and movement |
+| Distance Tracking | See how far you've walked to get your Jolt |
+| Non-blocking Code | Smooth, responsive operation |
 
 ### Use Cases
 
-- 🥾 Hiking and trail navigation
-- 🚴 Cycling trip tracking
-- 📍 Geocaching adventures
-- 📚 Learning embedded systems
-- 🔧 PCB design portfolio project
+- ⚡ Finding nearby Jolt energy drink stores
+- 🚶 Walking navigation with compass guidance
+- 🗺️ General GPS coordinate display
+- 📚 Learning embedded systems and PCB design
+- 🔧 First KiCad project portfolio piece
 
 ---
 
@@ -247,9 +253,9 @@ Press **Button 1** to cycle through display modes:
 
 | Mode | Display Content |
 |------|-----------------|
-| GPS Info | Coordinates, satellites, heading, speed/altitude |
-| Compass Only | Large compass rose with heading needle |
-| System Info | Uptime, connection status, total distance |
+| GPS Info | Your location, heading, speed — ready to find Jolt! |
+| Compass Only | Large compass rose to guide your walk to the store |
+| System Info | Uptime, GPS status, distance traveled, store count (TBD) |
 
 ### Button Functions
 
@@ -262,9 +268,9 @@ Press **Button 1** to cycle through display modes:
 
 | Color | Meaning |
 |-------|---------|
-| 🔴 Red | No GPS fix (< 4 satellites) |
-| 🟡 Yellow | GPS fix, stationary |
-| 🟢 Green | GPS fix, moving |
+| 🔴 Red | No GPS fix — can't locate you yet |
+| 🟡 Yellow | GPS locked, but you're standing still |
+| 🟢 Green | GPS locked and you're on the move — go get that Jolt! |
 | 🔵 Blue (blinking) | Compass calibration mode |
 
 ### Compass Calibration
@@ -322,12 +328,14 @@ This project taught me the complete hardware design workflow:
 
 ### Future Improvements
 
-- [ ] Add battery management (TP4056 + 18650)
-- [ ] Include SD card for track logging
-- [ ] Add buzzer for waypoint alerts
-- [ ] Design 3D-printed enclosure
-- [ ] Implement Bluetooth for phone connectivity
-- [ ] Add solar charging option
+- [ ] **Store database integration** — API/database of Jolt retailer locations
+- [ ] **Distance to nearest store** — Show how far to walk for your energy fix
+- [ ] **Direction arrow** — Point toward the nearest Jolt store
+- [ ] Add battery management (TP4056 + 18650) for portable use
+- [ ] Include SD card for logging your Jolt-hunting adventures
+- [ ] Add buzzer alert when approaching a store
+- [ ] Design 3D-printed enclosure (energy drink themed!)
+- [ ] Implement Bluetooth for phone app connectivity
 
 ---
 
@@ -365,12 +373,13 @@ This project taught me the complete hardware design workflow:
 - [x] Schematic design complete
 - [x] PCB layout complete
 - [x] 3D model visualization
-- [x] Arduino firmware written
+- [x] Arduino firmware written (GPS + compass working)
 - [ ] Breadboard prototype testing
 - [ ] PCB fabrication order
 - [ ] PCB assembly
+- [ ] Store location database/API integration
 - [ ] Enclosure design
-- [ ] Field testing
+- [ ] Field testing (finding actual Jolt stores!)
 
 ---
 
@@ -384,8 +393,8 @@ This project taught me the complete hardware design workflow:
 
 ### Prototype (Coming Soon)
 
-| Breadboard Setup | Device in Action |
-|------------------|------------------|
+| Breadboard Setup | Finding Jolt Stores |
+|------------------|---------------------|
 | *Photo pending* | *Photo pending* |
 
 ---
@@ -415,7 +424,8 @@ If you build this project or have improvements to suggest, I'd love to hear abou
 - ⭐ Star this repo if you find it useful
 - 🍴 Fork and submit pull requests
 - 🐛 Report issues or bugs
-- 💡 Suggest new features
+- 💡 Suggest new features (especially store database ideas!)
+- ⚡ Share your Jolt-hunting adventures
 
 ---
 
@@ -430,6 +440,7 @@ If you build this project or have improvements to suggest, I'd love to hear abou
 ---
 
 <p align="center">
-  <i>Built with ❤️ as a learning project</i><br>
-  <i>First PCB design — everyone starts somewhere!</i>
+  <i>Built with ❤️ and ⚡ caffeine</i><br>
+  <i>First PCB design — everyone starts somewhere!</i><br>
+  <i>Now go find your Jolt!</i>
 </p>
