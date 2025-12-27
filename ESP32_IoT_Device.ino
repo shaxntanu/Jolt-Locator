@@ -20,739 +20,463 @@
 
 // ==================== LIBRARIES ====================
 #include <Wire.h>
-#include <TinyGPSPlus.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
-#include <QMC5883LCompass.h>
+#include <TinyGPSPlus.h>
+#include <Adafruit_Sensor.h>
+#include <Adafruit_HMC5883_U.h>
 
-// ==================== PIN DEFINITIONS ====================
-// GPS Module (NEO-6M) - UART2
-#define GPS_RX_PIN      16    // ESP32 RX2 ← GPS TX
-#define GPS_TX_PIN      17    // ESP32 TX2 → GPS RX
-#define GPS_BAUD        9600
+// ==================== CONFIGURATION ====================
+#define SCREEN_WIDTH 128
+#define SCREEN_HEIGHT 64
+#define OLED_RESET -1
 
-// I2C Bus (Shared: Magnetometer + OLED)
-#define I2C_SDA         21
-#define I2C_SCL         22
+// GPS Pins
+#define RXD2 16
+#define TXD2 17
 
-// OLED Display (SSD1306)
-#define SCREEN_WIDTH    128
-#define SCREEN_HEIGHT   64
-#define OLED_RESET      -1    // No reset pin
-#define OLED_ADDRESS    0x3C
+// RGB LED Pins
+#define LED_RED 25
+#define LED_GREEN 26
+#define LED_BLUE 27
 
-// RGB LED (Common Cathode, Active High)
-#define LED_RED         25
-#define LED_GREEN       26
-#define LED_BLUE        27
+// Button Pins
+#define BUTTON_SAVE 18    // Start Navigation
+#define BUTTON_CLEAR 19   // Stop Navigation
 
-// Push Buttons (Active Low with Internal Pull-ups)
-#define BTN_MODE        32    // Button 1: Toggle display mode
-#define BTN_CALIBRATE   33    // Button 2: Compass calibration
+// Target Location - COS Market Thapar University
+#define SHOP_LAT 30.9042
+#define SHOP_LON 76.3673
+#define SHOP_NAME "COS Market"
 
-// ==================== CONSTANTS ====================
-#define DEBOUNCE_DELAY      50      // Button debounce (ms)
-#define GPS_UPDATE_INTERVAL 1000    // GPS read interval (ms)
-#define DISPLAY_INTERVAL    200     // Display refresh (ms)
-#define COMPASS_INTERVAL    100     // Compass read interval (ms)
-#define LED_BLINK_INTERVAL  500     // LED blink rate (ms)
-#define CALIBRATION_TIME    15000   // Calibration duration (ms)
-#define SPEED_THRESHOLD     0.5     // Speed threshold for "moving" (km/h)
-#define COMPASS_FILTER      0.2     // Low-pass filter coefficient (0-1)
+// Arrival threshold (meters)
+#define ARRIVAL_DISTANCE 20
 
-// Display modes
-enum DisplayMode {
-  MODE_GPS_INFO,
-  MODE_COMPASS_ONLY,
-  MODE_SYSTEM_INFO,
-  MODE_COUNT
-};
-
-// LED colors
-enum LedColor {
-  COLOR_OFF,
-  COLOR_RED,
-  COLOR_GREEN,
-  COLOR_BLUE,
-  COLOR_YELLOW
-};
-
-// ==================== GLOBAL OBJECTS ====================
-TinyGPSPlus gps;
+// ==================== OBJECTS ====================
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
-QMC5883LCompass compass;
+HardwareSerial gpsSerial(2);
+TinyGPSPlus gps;
+Adafruit_HMC5883_Unified compass = Adafruit_HMC5883_Unified(12345);
 
-// ==================== STATE VARIABLES ====================
-// Display
-DisplayMode currentMode = MODE_GPS_INFO;
-bool displayInitialized = false;
-
-// GPS Data
-double latitude = 0.0;
-double longitude = 0.0;
-double altitude = 0.0;
-double speed_kmh = 0.0;
-int satellites = 0;
-bool gpsValid = false;
-int gpsHour = 0, gpsMinute = 0, gpsSecond = 0;
-bool timeValid = false;
-
-// Distance tracking
-double totalDistance = 0.0;
-double lastLat = 0.0;
-double lastLon = 0.0;
-bool hasLastPosition = false;
-
-// Compass
-int rawHeading = 0;
-float filteredHeading = 0.0;
-bool compassInitialized = false;
-bool calibrationMode = false;
-unsigned long calibrationStartTime = 0;
-
-// Buttons
-bool btn1LastState = HIGH;
-bool btn2LastState = HIGH;
-unsigned long btn1LastDebounce = 0;
-unsigned long btn2LastDebounce = 0;
-
-// Timing (non-blocking)
-unsigned long lastGpsUpdate = 0;
-unsigned long lastDisplayUpdate = 0;
-unsigned long lastCompassUpdate = 0;
-unsigned long lastLedBlink = 0;
-bool ledBlinkState = false;
-
-// System info
-unsigned long startTime = 0;
-
-// ==================== FUNCTION PROTOTYPES ====================
-void initGPS();
-void initCompass();
-void initDisplay();
-void initLED();
-void initButtons();
-
-void readGPS();
-void readCompass();
-void updateDisplay();
-void updateLED();
-void handleButtons();
-
-void setLedColor(LedColor color);
-const char* getCardinalDirection(int heading);
-String formatCoordinate(double coord, bool isLat);
-String formatTime(int h, int m, int s);
-String formatUptime(unsigned long ms);
-
-void displayGPSInfo();
-void displayCompassOnly();
-void displaySystemInfo();
-void displayCalibration();
-
-void startCalibration();
-void stopCalibration();
+// ==================== GLOBAL VARIABLES ====================
+bool navigationActive = false;
+bool gpsLocked = false;
+bool hasArrived = false;
+unsigned long lastUpdate = 0;
+unsigned long gpsChars = 0;
 
 // ==================== SETUP ====================
 void setup() {
-  // Initialize Serial for debugging
   Serial.begin(115200);
-  delay(100);
+  Serial.println("\n╔════════════════════════════════╗");
+  Serial.println("║   JOLT LOCATOR v1.0 FINAL     ║");
+  Serial.println("║   Energy Drink Finder         ║");
+  Serial.println("║   Production Ready            ║");
+  Serial.println("╚════════════════════════════════╝\n");
   
-  Serial.println();
-  Serial.println("========================================");
-  Serial.println("  JOLT LOCATOR");
-  Serial.println("  Energy Drink Store Locator");
-  Serial.println("  by Arceus Labs");
-  Serial.println("========================================");
-  Serial.println();
-  
-  startTime = millis();
+  // Initialize GPS
+  gpsSerial.begin(9600, SERIAL_8N1, RXD2, TXD2);
+  Serial.println("[✓] GPS initialized");
   
   // Initialize I2C
-  Wire.begin(I2C_SDA, I2C_SCL);
-  Serial.println("[I2C] Bus initialized on SDA:" + String(I2C_SDA) + " SCL:" + String(I2C_SCL));
+  Wire.begin(21, 22);
   
-  // Initialize peripherals
-  initLED();
-  initButtons();
-  initDisplay();
-  initCompass();
-  initGPS();
+  // Initialize OLED
+  if(!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
+    Serial.println("[✗] OLED initialization FAILED!");
+    while(1);
+  }
+  Serial.println("[✓] OLED initialized");
   
-  Serial.println();
-  Serial.println("[SYSTEM] Initialization complete!");
-  Serial.println("[SYSTEM] Waiting for GPS fix to locate you...");
-  Serial.println("[SYSTEM] Soon you'll find your nearest Jolt store!");
-  Serial.println();
+  // Initialize Compass
+  if(!compass.begin()) {
+    Serial.println("[!] Compass not detected - navigation will work without it");
+  } else {
+    Serial.println("[✓] Compass initialized");
+  }
+  
+  // Initialize RGB LED
+  pinMode(LED_RED, OUTPUT);
+  pinMode(LED_GREEN, OUTPUT);
+  pinMode(LED_BLUE, OUTPUT);
+  Serial.println("[✓] RGB LED initialized");
+  
+  // RGB Startup Test
+  Serial.println("[•] Testing RGB LED...");
+  setColor(255, 0, 0); delay(200);
+  setColor(0, 255, 0); delay(200);
+  setColor(0, 0, 255); delay(200);
+  setColor(0, 0, 0);
+  Serial.println("[✓] RGB LED test complete");
+  
+  // Initialize Buttons
+  pinMode(BUTTON_SAVE, INPUT_PULLUP);
+  pinMode(BUTTON_CLEAR, INPUT_PULLUP);
+  Serial.println("[✓] Buttons initialized");
+  
+  // Show Startup Screen
+  showSplashScreen();
+  
+  Serial.println("\n[•] System ready!");
+  Serial.println("[•] Target: " + String(SHOP_NAME));
+  Serial.print("[•] Coordinates: ");
+  Serial.print(SHOP_LAT, 6);
+  Serial.print(", ");
+  Serial.println(SHOP_LON, 6);
+  Serial.println("\n[⏳] Waiting for GPS lock...\n");
 }
 
 // ==================== MAIN LOOP ====================
 void loop() {
-  unsigned long currentMillis = millis();
+  // Feed GPS data
+  while (gpsSerial.available() > 0) {
+    gps.encode(gpsSerial.read());
+    gpsChars++;
+  }
   
-  // Handle button inputs (always responsive)
+  // Check for GPS lock
+  if (gps.location.isValid() && !gpsLocked) {
+    gpsLocked = true;
+    onGPSLocked();
+  }
+  
+  // Get compass heading
+  float heading = getCompassHeading();
+  
+  // Handle button presses
   handleButtons();
   
-  // Read GPS data
-  if (currentMillis - lastGpsUpdate >= GPS_UPDATE_INTERVAL) {
-    lastGpsUpdate = currentMillis;
-    readGPS();
+  // Update display (throttled to 500ms)
+  if (millis() - lastUpdate > 500) {
+    updateDisplay(heading);
+    lastUpdate = millis();
   }
   
-  // Read compass data
-  if (currentMillis - lastCompassUpdate >= COMPASS_INTERVAL) {
-    lastCompassUpdate = currentMillis;
-    readCompass();
-  }
+  // Update LED indicator
+  updateLED(heading);
   
-  // Update display
-  if (currentMillis - lastDisplayUpdate >= DISPLAY_INTERVAL) {
-    lastDisplayUpdate = currentMillis;
-    updateDisplay();
-  }
-  
-  // Update LED status
-  updateLED();
-  
-  // Check calibration timeout
-  if (calibrationMode && (currentMillis - calibrationStartTime >= CALIBRATION_TIME)) {
-    stopCalibration();
-  }
-  
-  // Feed GPS parser continuously
-  while (Serial2.available() > 0) {
-    gps.encode(Serial2.read());
-  }
-}
-
-
-// ==================== INITIALIZATION FUNCTIONS ====================
-
-void initGPS() {
-  Serial.print("[GPS] Initializing on UART2... ");
-  Serial2.begin(GPS_BAUD, SERIAL_8N1, GPS_RX_PIN, GPS_TX_PIN);
   delay(100);
-  Serial.println("OK");
-  Serial.println("[GPS] Baud: " + String(GPS_BAUD) + " | RX:" + String(GPS_RX_PIN) + " TX:" + String(GPS_TX_PIN));
 }
 
-void initCompass() {
-  Serial.print("[COMPASS] Initializing QMC5883L... ");
+// ==================== GPS LOCK EVENT ====================
+void onGPSLocked() {
+  Serial.println("\n╔════════════════════════════════╗");
+  Serial.println("║      GPS LOCK ACQUIRED!       ║");
+  Serial.println("╚════════════════════════════════╝");
+  Serial.print("Latitude:    ");
+  Serial.println(gps.location.lat(), 6);
+  Serial.print("Longitude:   ");
+  Serial.println(gps.location.lng(), 6);
+  Serial.print("Satellites:  ");
+  Serial.println(gps.satellites.value());
+  Serial.print("Altitude:    ");
+  Serial.print(gps.altitude.meters(), 1);
+  Serial.println(" m");
+  Serial.print("Speed:       ");
+  Serial.print(gps.speed.kmph(), 1);
+  Serial.println(" km/h");
   
-  compass.init();
-  compass.setSmoothing(10, true);  // Enable smoothing with 10 samples
-  
-  // Test read to verify connection
-  compass.read();
-  int testHeading = compass.getAzimuth();
-  
-  if (testHeading >= 0 && testHeading <= 360) {
-    compassInitialized = true;
-    filteredHeading = testHeading;
-    Serial.println("OK");
-    Serial.println("[COMPASS] Initial heading: " + String(testHeading) + "°");
+  // Calculate distance to shop
+  float dist = calculateDistance();
+  Serial.print("Distance to ");
+  Serial.print(SHOP_NAME);
+  Serial.print(": ");
+  if (dist < 1000) {
+    Serial.print((int)dist);
+    Serial.println(" m");
   } else {
-    compassInitialized = false;
-    Serial.println("FAILED");
-    Serial.println("[COMPASS] Warning: Sensor not responding correctly");
+    Serial.print(dist/1000.0, 2);
+    Serial.println(" km");
+  }
+  Serial.println("\n[•] Press SAVE button to start navigation\n");
+  
+  // Green flash
+  for(int i=0; i<3; i++) {
+    setColor(0, 255, 0);
+    delay(200);
+    setColor(0, 0, 0);
+    delay(200);
   }
 }
 
-void initDisplay() {
-  Serial.print("[OLED] Initializing SSD1306... ");
+// ==================== BUTTON HANDLING ====================
+void handleButtons() {
+  static unsigned long lastPress = 0;
   
-  if (display.begin(SSD1306_SWITCHCAPVCC, OLED_ADDRESS)) {
-    displayInitialized = true;
-    Serial.println("OK");
-    
-    // Show splash screen
-    display.clearDisplay();
-    display.setTextSize(1);
-    display.setTextColor(SSD1306_WHITE);
-    display.setCursor(20, 10);
-    display.println("JOLT LOCATOR");
-    display.setCursor(10, 25);
-    display.println("Energy Drink Finder");
-    display.setCursor(30, 40);
-    display.println("Arceus Labs");
-    display.setCursor(15, 54);
-    display.println("Initializing...");
-    display.display();
-    delay(1500);
-  } else {
-    displayInitialized = false;
-    Serial.println("FAILED");
-    Serial.println("[OLED] Error: Display not found at 0x" + String(OLED_ADDRESS, HEX));
+  // SAVE Button - Start Navigation
+  if (digitalRead(BUTTON_SAVE) == LOW && millis() - lastPress > 300) {
+    if (gpsLocked) {
+      navigationActive = true;
+      hasArrived = false;
+      
+      Serial.println("\n[▶] NAVIGATION STARTED");
+      Serial.print("[→] Target: ");
+      Serial.println(SHOP_NAME);
+      
+      float dist = calculateDistance();
+      Serial.print("[📍] Distance: ");
+      if (dist < 1000) {
+        Serial.print((int)dist);
+        Serial.println(" m");
+      } else {
+        Serial.print(dist/1000.0, 2);
+        Serial.println(" km");
+      }
+      
+      double course = calculateCourse();
+      Serial.print("[🧭] Direction: ");
+      Serial.print(getDirectionName(course));
+      Serial.print(" (");
+      Serial.print((int)course);
+      Serial.println("°)\n");
+      
+      // Green flash
+      setColor(0, 255, 0);
+      delay(300);
+      setColor(0, 0, 0);
+      
+    } else {
+      Serial.println("[✗] GPS not locked! Cannot start navigation.");
+      // Red flash
+      setColor(255, 0, 0);
+      delay(300);
+      setColor(0, 0, 0);
+    }
+    lastPress = millis();
+  }
+  
+  // CLEAR Button - Stop Navigation
+  if (digitalRead(BUTTON_CLEAR) == LOW && millis() - lastPress > 300) {
+    if (navigationActive) {
+      navigationActive = false;
+      Serial.println("\n[■] NAVIGATION STOPPED\n");
+      // Red flash
+      setColor(255, 0, 0);
+      delay(300);
+      setColor(0, 0, 0);
+    }
+    lastPress = millis();
   }
 }
 
-void initLED() {
-  Serial.print("[LED] Initializing RGB LED... ");
+// ==================== DISPLAY UPDATE ====================
+void updateDisplay(float heading) {
+  display.clearDisplay();
+  display.setTextSize(1);
+  display.setTextColor(SSD1306_WHITE);
+  display.setCursor(0, 0);
   
-  pinMode(LED_RED, OUTPUT);
-  pinMode(LED_GREEN, OUTPUT);
-  pinMode(LED_BLUE, OUTPUT);
+  // Header
+  display.println("=== JOLT LOCATOR ===");
+  display.println("");
   
-  // Test sequence
-  setLedColor(COLOR_RED);
-  delay(200);
-  setLedColor(COLOR_GREEN);
-  delay(200);
-  setLedColor(COLOR_BLUE);
-  delay(200);
-  setLedColor(COLOR_OFF);
-  
-  Serial.println("OK");
-  Serial.println("[LED] Pins - R:" + String(LED_RED) + " G:" + String(LED_GREEN) + " B:" + String(LED_BLUE));
-}
-
-void initButtons() {
-  Serial.print("[BUTTONS] Initializing... ");
-  
-  pinMode(BTN_MODE, INPUT_PULLUP);
-  pinMode(BTN_CALIBRATE, INPUT_PULLUP);
-  
-  Serial.println("OK");
-  Serial.println("[BUTTONS] Mode:" + String(BTN_MODE) + " Calibrate:" + String(BTN_CALIBRATE));
-}
-
-// ==================== SENSOR READING FUNCTIONS ====================
-
-void readGPS() {
-  // Update GPS data if valid
-  if (gps.location.isValid()) {
-    double newLat = gps.location.lat();
-    double newLon = gps.location.lng();
+  // GPS Status
+  if (gpsLocked) {
+    display.print("GPS: LOCK (");
+    display.print(gps.satellites.value());
+    display.println(" sats)");
     
-    // Calculate distance traveled
-    if (hasLastPosition && gpsValid) {
-      double dist = TinyGPSPlus::distanceBetween(lastLat, lastLon, newLat, newLon);
-      if (dist > 1.0 && dist < 1000.0) {  // Filter noise (1m - 1km)
-        totalDistance += dist;
+    // Current position
+    display.print(gps.location.lat(), 4);
+    display.print(",");
+    display.println(gps.location.lng(), 4);
+    
+  } else {
+    display.println("GPS: SEARCHING...");
+    display.print("Chars: ");
+    display.println(gpsChars);
+    
+    if (gpsChars == 0) {
+      display.println("NO DATA!");
+      display.println("Check wiring");
+    } else {
+      display.println("Stay outside");
+      display.println("Wait 5-15 mins");
+      if (gps.satellites.isValid()) {
+        display.print("Sats: ");
+        display.println(gps.satellites.value());
       }
     }
+  }
+  
+  display.println("");
+  
+  // Navigation Info
+  if (navigationActive && gpsLocked) {
+    display.print("Target: ");
+    display.println(SHOP_NAME);
     
-    lastLat = latitude;
-    lastLon = longitude;
-    hasLastPosition = gpsValid;
+    float distance = calculateDistance();
+    double course = calculateCourse();
     
-    latitude = newLat;
-    longitude = newLon;
-    gpsValid = true;
-  }
-  
-  if (gps.altitude.isValid()) {
-    altitude = gps.altitude.meters();
-  }
-  
-  if (gps.speed.isValid()) {
-    speed_kmh = gps.speed.kmph();
-  }
-  
-  if (gps.satellites.isValid()) {
-    satellites = gps.satellites.value();
-  }
-  
-  if (gps.time.isValid()) {
-    gpsHour = gps.time.hour();
-    gpsMinute = gps.time.minute();
-    gpsSecond = gps.time.second();
-    timeValid = true;
-  }
-  
-  // Debug output
-  static unsigned long lastDebug = 0;
-  if (millis() - lastDebug >= 5000) {
-    lastDebug = millis();
-    Serial.println("[GPS] Sats:" + String(satellites) + 
-                   " | Lat:" + String(latitude, 6) + 
-                   " | Lon:" + String(longitude, 6) +
-                   " | Alt:" + String(altitude, 1) + "m" +
-                   " | Spd:" + String(speed_kmh, 1) + "km/h");
-  }
-}
-
-void readCompass() {
-  if (!compassInitialized) return;
-  
-  compass.read();
-  rawHeading = compass.getAzimuth();
-  
-  // Validate reading
-  if (rawHeading < 0 || rawHeading > 360) {
-    return;
-  }
-  
-  // Apply low-pass filter for smooth readings
-  // Handle wrap-around at 0/360 degrees
-  float diff = rawHeading - filteredHeading;
-  if (diff > 180) diff -= 360;
-  if (diff < -180) diff += 360;
-  
-  filteredHeading += COMPASS_FILTER * diff;
-  
-  // Normalize to 0-360
-  if (filteredHeading < 0) filteredHeading += 360;
-  if (filteredHeading >= 360) filteredHeading -= 360;
-}
-
-
-// ==================== DISPLAY FUNCTIONS ====================
-
-void updateDisplay() {
-  if (!displayInitialized) return;
-  
-  display.clearDisplay();
-  display.setTextColor(SSD1306_WHITE);
-  
-  if (calibrationMode) {
-    displayCalibration();
-  } else {
-    switch (currentMode) {
-      case MODE_GPS_INFO:
-        displayGPSInfo();
-        break;
-      case MODE_COMPASS_ONLY:
-        displayCompassOnly();
-        break;
-      case MODE_SYSTEM_INFO:
-        displaySystemInfo();
-        break;
-      default:
-        displayGPSInfo();
+    // Distance
+    display.print("Dist: ");
+    if (distance < 1000) {
+      display.print((int)distance);
+      display.println(" m");
+    } else {
+      display.print(distance/1000.0, 2);
+      display.println(" km");
     }
+    
+    // Direction to target
+    display.print("Go: ");
+    display.print(getDirectionName(course));
+    display.print(" (");
+    display.print((int)course);
+    display.println("*)");
+    
+    // Current heading
+    display.print("Heading: ");
+    display.print((int)heading);
+    display.print("* ");
+    display.println(getDirectionName(heading));
+    
+    // Arrival check
+    if (distance < ARRIVAL_DISTANCE) {
+      if (!hasArrived) {
+        hasArrived = true;
+        Serial.println("\n╔════════════════════════════════╗");
+        Serial.println("║    DESTINATION REACHED! 🎉    ║");
+        Serial.println("╚════════════════════════════════╝\n");
+      }
+      display.println("");
+      display.setTextSize(2);
+      display.println("ARRIVED!");
+    }
+    
+  } else if (gpsLocked) {
+    display.println("Ready to navigate!");
+    display.println("");
+    display.println("Press SAVE to go");
+    display.print("to ");
+    display.println(SHOP_NAME);
+    display.println("");
+    display.print("Head: ");
+    display.print((int)heading);
+    display.print("* ");
+    display.println(getDirectionName(heading));
   }
   
   display.display();
 }
 
-void displayGPSInfo() {
-  display.setTextSize(1);
-  
-  // Header
-  display.setCursor(0, 0);
-  display.print("JOLT LOCATOR");
-  
-  // Status indicator
-  display.setCursor(100, 0);
-  if (satellites >= 4) {
-    display.print("FIX");
-  } else {
-    display.print("...");
-  }
-  
-  // Line 2-3: Coordinates (your current location)
-  display.setCursor(0, 12);
-  if (gpsValid) {
-    display.print("Lat:");
-    display.println(String(latitude, 5));
-    display.print("Lon:");
-    display.println(String(longitude, 5));
-  } else {
-    display.println("Lat: ---.-----");
-    display.println("Lon: ---.-----");
-  }
-  
-  // Line 4: Compass heading (direction you're facing)
-  display.setCursor(0, 36);
-  display.print("Hdg: ");
-  if (compassInitialized) {
-    display.print((int)filteredHeading);
-    display.print((char)247);  // Degree symbol
-    display.print(" ");
-    display.print(getCardinalDirection((int)filteredHeading));
-  } else {
-    display.print("N/A");
-  }
-  
-  // Line 5: Speed (when walking to store) or Altitude
-  display.setCursor(0, 48);
-  if (speed_kmh > SPEED_THRESHOLD) {
-    display.print("Spd: ");
-    display.print(speed_kmh, 1);
-    display.print(" km/h");
-  } else {
-    display.print("Alt: ");
-    display.print(altitude, 0);
-    display.print(" m");
-  }
-  
-  // Line 6: Placeholder for future store info
-  display.setCursor(0, 56);
-  display.print("Sats:");
-  display.print(satellites);
-  display.print(" Store:TBD");
-}
-
-void displayCompassOnly() {
-  // Large compass display - helps user walk toward store
-  display.setTextSize(1);
-  display.setCursor(25, 0);
-  display.println("FIND JOLT");
-  
-  // Draw compass circle
-  int centerX = 64;
-  int centerY = 38;
-  int radius = 22;
-  display.drawCircle(centerX, centerY, radius, SSD1306_WHITE);
-  
-  // Draw cardinal points
-  display.setCursor(centerX - 3, centerY - radius - 8);
-  display.print("N");
-  display.setCursor(centerX - 3, centerY + radius + 2);
-  display.print("S");
-  display.setCursor(centerX + radius + 3, centerY - 3);
-  display.print("E");
-  display.setCursor(centerX - radius - 9, centerY - 3);
-  display.print("W");
-  
-  // Draw heading needle
-  if (compassInitialized) {
-    float headingRad = (filteredHeading - 90) * PI / 180.0;  // Adjust for display orientation
-    int needleX = centerX + (radius - 5) * cos(headingRad);
-    int needleY = centerY + (radius - 5) * sin(headingRad);
-    display.drawLine(centerX, centerY, needleX, needleY, SSD1306_WHITE);
-    display.fillCircle(needleX, needleY, 2, SSD1306_WHITE);
-  }
-  
-  // Display heading value
-  display.setTextSize(1);
-  display.setCursor(0, 56);
-  display.print("Heading: ");
-  if (compassInitialized) {
-    display.print((int)filteredHeading);
-    display.print((char)247);
-    display.print(" ");
-    display.print(getCardinalDirection((int)filteredHeading));
-  } else {
-    display.print("N/A");
-  }
-}
-
-void displaySystemInfo() {
-  display.setTextSize(1);
-  
-  display.setCursor(0, 0);
-  display.println("== JOLT LOCATOR ==");
-  
-  display.setCursor(0, 12);
-  display.print("Uptime: ");
-  display.println(formatUptime(millis() - startTime));
-  
-  display.setCursor(0, 24);
-  display.print("GPS: ");
-  display.println(gpsValid ? "Locked" : "Searching");
-  
-  display.setCursor(0, 36);
-  display.print("Compass: ");
-  display.println(compassInitialized ? "Ready" : "Error");
-  
-  display.setCursor(0, 48);
-  display.print("Traveled: ");
-  if (totalDistance < 1000) {
-    display.print(totalDistance, 0);
-    display.println(" m");
-  } else {
-    display.print(totalDistance / 1000.0, 2);
-    display.println(" km");
-  }
-  
-  display.setCursor(0, 56);
-  display.print("Stores: TBD");  // Future: show nearby store count
-}
-
-void displayCalibration() {
-  display.setTextSize(1);
-  display.setCursor(10, 0);
-  display.println("COMPASS CALIBRATION");
-  
-  display.setCursor(0, 16);
-  display.println("Rotate device slowly");
-  display.println("360 degrees in all");
-  display.println("orientations");
-  
-  // Progress bar
-  unsigned long elapsed = millis() - calibrationStartTime;
-  int progress = map(elapsed, 0, CALIBRATION_TIME, 0, 100);
-  progress = constrain(progress, 0, 100);
-  
-  display.setCursor(0, 48);
-  display.print("Progress: ");
-  display.print(progress);
-  display.println("%");
-  
-  // Draw progress bar
-  display.drawRect(0, 56, 128, 8, SSD1306_WHITE);
-  display.fillRect(2, 58, map(progress, 0, 100, 0, 124), 4, SSD1306_WHITE);
-}
-
-
-// ==================== LED FUNCTIONS ====================
-
-void updateLED() {
-  unsigned long currentMillis = millis();
-  
-  if (calibrationMode) {
-    // Blink blue during calibration
-    if (currentMillis - lastLedBlink >= LED_BLINK_INTERVAL) {
-      lastLedBlink = currentMillis;
-      ledBlinkState = !ledBlinkState;
-      if (ledBlinkState) {
-        setLedColor(COLOR_BLUE);
-      } else {
-        setLedColor(COLOR_OFF);
+// ==================== LED INDICATOR ====================
+void updateLED(float heading) {
+  // Not navigating - LED off
+  if (!navigationActive) {
+    if (!gpsLocked && gpsChars > 100) {
+      // Blink blue while searching
+      static unsigned long lastBlink = 0;
+      static bool state = false;
+      if (millis() - lastBlink > 1000) {
+        state = !state;
+        setColor(0, 0, state ? 255 : 0);
+        lastBlink = millis();
       }
+    } else {
+      setColor(0, 0, 0);
     }
     return;
   }
   
-  // Normal operation LED status
-  if (satellites < 4) {
-    // RED: No GPS fix
-    setLedColor(COLOR_RED);
-  } else if (speed_kmh > SPEED_THRESHOLD) {
-    // GREEN: GPS fix and moving
-    setLedColor(COLOR_GREEN);
+  // Navigating - check if locked
+  if (!gpsLocked) {
+    setColor(0, 0, 0);
+    return;
+  }
+  
+  float distance = calculateDistance();
+  double course = calculateCourse();
+  
+  // Arrived - solid green
+  if (distance < ARRIVAL_DISTANCE) {
+    setColor(0, 255, 0);
+    return;
+  }
+  
+  // Direction indicator
+  int diff = abs((int)heading - (int)course);
+  if (diff > 180) diff = 360 - diff;
+  
+  if (diff < 30) {
+    setColor(0, 255, 0);      // Green - on track
+  } else if (diff < 60) {
+    setColor(255, 255, 0);    // Yellow - slight turn
+  } else if (diff < 120) {
+    setColor(255, 128, 0);    // Orange - big turn
   } else {
-    // YELLOW: GPS fix but stationary
-    setLedColor(COLOR_YELLOW);
+    setColor(255, 0, 0);      // Red - wrong way
   }
 }
 
-void setLedColor(LedColor color) {
-  switch (color) {
-    case COLOR_OFF:
-      digitalWrite(LED_RED, LOW);
-      digitalWrite(LED_GREEN, LOW);
-      digitalWrite(LED_BLUE, LOW);
-      break;
-    case COLOR_RED:
-      digitalWrite(LED_RED, HIGH);
-      digitalWrite(LED_GREEN, LOW);
-      digitalWrite(LED_BLUE, LOW);
-      break;
-    case COLOR_GREEN:
-      digitalWrite(LED_RED, LOW);
-      digitalWrite(LED_GREEN, HIGH);
-      digitalWrite(LED_BLUE, LOW);
-      break;
-    case COLOR_BLUE:
-      digitalWrite(LED_RED, LOW);
-      digitalWrite(LED_GREEN, LOW);
-      digitalWrite(LED_BLUE, HIGH);
-      break;
-    case COLOR_YELLOW:
-      digitalWrite(LED_RED, HIGH);
-      digitalWrite(LED_GREEN, HIGH);
-      digitalWrite(LED_BLUE, LOW);
-      break;
-  }
-}
+// ==================== HELPER FUNCTIONS ====================
 
-// ==================== BUTTON HANDLING ====================
-
-void handleButtons() {
-  unsigned long currentMillis = millis();
+void showSplashScreen() {
+  display.clearDisplay();
+  display.setTextSize(3);
+  display.setCursor(15, 10);
+  display.println("JOLT");
+  display.setTextSize(2);
+  display.setCursor(0, 35);
+  display.println("LOCATOR");
+  display.setTextSize(1);
+  display.setCursor(25, 56);
+  display.println("v1.0 Final");
+  display.display();
   
-  // Button 1: Toggle display mode
-  bool btn1State = digitalRead(BTN_MODE);
-  if (btn1State != btn1LastState) {
-    btn1LastDebounce = currentMillis;
-  }
-  if ((currentMillis - btn1LastDebounce) > DEBOUNCE_DELAY) {
-    if (btn1State == LOW && btn1LastState == HIGH) {
-      // Button pressed
-      if (!calibrationMode) {
-        currentMode = (DisplayMode)((currentMode + 1) % MODE_COUNT);
-        Serial.println("[BUTTON] Mode changed to: " + String(currentMode));
-      }
-    }
-  }
-  btn1LastState = btn1State;
+  setColor(0, 0, 255);
+  delay(2500);
+  setColor(0, 0, 0);
+}
+
+float getCompassHeading() {
+  sensors_event_t event;
+  compass.getEvent(&event);
   
-  // Button 2: Calibration mode
-  bool btn2State = digitalRead(BTN_CALIBRATE);
-  if (btn2State != btn2LastState) {
-    btn2LastDebounce = currentMillis;
-  }
-  if ((currentMillis - btn2LastDebounce) > DEBOUNCE_DELAY) {
-    if (btn2State == LOW && btn2LastState == HIGH) {
-      // Button pressed
-      if (calibrationMode) {
-        stopCalibration();
-      } else {
-        startCalibration();
-      }
-    }
-  }
-  btn2LastState = btn2State;
-}
-
-void startCalibration() {
-  calibrationMode = true;
-  calibrationStartTime = millis();
-  compass.setCalibration(-32768, 32767, -32768, 32767, -32768, 32767);
-  Serial.println("[COMPASS] Calibration started - rotate device 360 degrees");
-}
-
-void stopCalibration() {
-  calibrationMode = false;
-  Serial.println("[COMPASS] Calibration complete");
-}
-
-// ==================== UTILITY FUNCTIONS ====================
-
-const char* getCardinalDirection(int heading) {
-  // Normalize heading to 0-359
-  heading = heading % 360;
-  if (heading < 0) heading += 360;
+  float heading = atan2(event.magnetic.y, event.magnetic.x);
+  heading = heading * 180.0 / PI;
   
-  // 8-point compass rose
-  if (heading >= 337 || heading < 23)  return "N";
-  if (heading >= 23 && heading < 68)   return "NE";
-  if (heading >= 68 && heading < 113)  return "E";
-  if (heading >= 113 && heading < 158) return "SE";
-  if (heading >= 158 && heading < 203) return "S";
-  if (heading >= 203 && heading < 248) return "SW";
-  if (heading >= 248 && heading < 293) return "W";
-  if (heading >= 293 && heading < 337) return "NW";
-  return "?";
-}
-
-String formatCoordinate(double coord, bool isLat) {
-  char buffer[16];
-  char dir;
-  
-  if (isLat) {
-    dir = (coord >= 0) ? 'N' : 'S';
-  } else {
-    dir = (coord >= 0) ? 'E' : 'W';
+  if (heading < 0) {
+    heading += 360.0;
   }
   
-  coord = abs(coord);
-  int degrees = (int)coord;
-  double minutes = (coord - degrees) * 60.0;
-  
-  sprintf(buffer, "%d%c%.3f'%c", degrees, 247, minutes, dir);
-  return String(buffer);
+  return heading;
 }
 
-String formatTime(int h, int m, int s) {
-  char buffer[10];
-  sprintf(buffer, "%02d:%02d:%02d", h, m, s);
-  return String(buffer);
+float calculateDistance() {
+  if (!gpsLocked) return 0;
+  
+  return TinyGPSPlus::distanceBetween(
+    gps.location.lat(), gps.location.lng(),
+    SHOP_LAT, SHOP_LON
+  );
 }
 
-String formatUptime(unsigned long ms) {
-  unsigned long seconds = ms / 1000;
-  unsigned long minutes = seconds / 60;
-  unsigned long hours = minutes / 60;
+double calculateCourse() {
+  if (!gpsLocked) return 0;
   
-  seconds %= 60;
-  minutes %= 60;
+  return TinyGPSPlus::courseTo(
+    gps.location.lat(), gps.location.lng(),
+    SHOP_LAT, SHOP_LON
+  );
+}
+
+String getDirectionName(double degrees) {
+  int angle = (int)degrees;
   
-  char buffer[12];
-  sprintf(buffer, "%02lu:%02lu:%02lu", hours, minutes, seconds);
-  return String(buffer);
+  if (angle < 22 || angle >= 338) return "N";
+  if (angle < 67) return "NE";
+  if (angle < 112) return "E";
+  if (angle < 157) return "SE";
+  if (angle < 202) return "S";
+  if (angle < 247) return "SW";
+  if (angle < 292) return "W";
+  return "NW";
+}
+
+void setColor(int red, int green, int blue) {
+  analogWrite(LED_RED, red);
+  analogWrite(LED_GREEN, green);
+  analogWrite(LED_BLUE, blue);
 }
